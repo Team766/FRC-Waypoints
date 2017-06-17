@@ -39,9 +39,10 @@ http.createServer(function (req, res) {
         });
     });
     
-    if (req.method == "GET" && /$\/main.(html|js|css)/.test(req.url)) {
+    if (req.method == "GET" && /^\/main.(html|js|css)$/.test(req.url)) {
         res.writeHead(200, noCacheHeaders);
-        res.end(fs.readFileSync("main.html"));
+        var content = fs.readFileSync(req.url.slice(1));
+        res.end(content); // TODO: use proper MIME type?
     } else {
         console.log("   => 404");
         res.writeHead(404, noCacheHeaders);
