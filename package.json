@@ -1,0 +1,15 @@
+{
+  "name": "waypoints",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "dependencies": {
+    "opn": "^5.1.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "qxzcode",
+  "license": "ISC"
+}
