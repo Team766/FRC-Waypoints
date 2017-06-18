@@ -4,3 +4,10 @@ html, body {
     margin: 0;
 }
 
+#canvasWrapper {
+    width: 70%;
+}
+
+canvas {
+    width: 100%;
+}
