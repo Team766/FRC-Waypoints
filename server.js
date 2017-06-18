@@ -9,12 +9,6 @@ const noCacheHeaders = {
 };
 http.createServer(function (req, res) {
     console.log("Request: "+req.method+" "+req.url);
-    if (req.connection.remoteAddress != "::1") {
-        console.log("FOREIGN CONNECTION: "+req.connection.remoteAddress);
-        res.writeHead(403, "Fuck off.", noCacheHeaders);
-        res.end();
-        return;
-    }
     
     var body = () => new Promise((resolve, reject) => {
         var bodyStr = "";
@@ -39,9 +33,11 @@ http.createServer(function (req, res) {
         });
     });
     
-    if (req.method == "GET" && /^\/main.(html|js|css)$/.test(req.url)) {
+    var validFiles = ["main.html", "main.js", "main.css", "simplify.js"];
+    var file = req.url.slice(1);
+    if (req.method == "GET" && validFiles.indexOf(file) != -1) {
         res.writeHead(200, noCacheHeaders);
-        var content = fs.readFileSync(req.url.slice(1));
+        var content = fs.readFileSync(file);
         res.end(content); // TODO: use proper MIME type?
     } else {
         console.log("   => 404");

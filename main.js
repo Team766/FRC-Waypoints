@@ -1,19 +1,79 @@
-// initialize canvas & context
-var canvas = document.querySelector("canvas");
-var ctx = canvas.getContext("2d");
+// constants
+const fieldWidth  = 652; // inches
+const fieldHeight = 324; // inches
 
-var ratio = window.devicePixelRatio || 1;
-var width  = canvas.clientWidth;
-var height = width * 5/9;
-canvas.width  = width*ratio;
-canvas.height = height*ratio;
-ctx.scale(ratio, ratio);
+// initialize canvas & context
+const canvas = document.querySelector("canvas");
+const ctx = canvas.getContext("2d");
+
+const pixelRatio = window.devicePixelRatio || 1;
+const width  = canvas.clientWidth;
+const height = width * fieldHeight/fieldWidth;
+canvas.width  = width*pixelRatio;
+canvas.height = height*pixelRatio;
+const scale = width/fieldWidth;
+ctx.scale(pixelRatio*scale, pixelRatio*scale);
+
+// state & related functions
+
+var waypoints = [];
+
+function addWaypoint(x, y) {
+    waypoints.push({x, y});
+    drawWaypoints();
+}
+
+function simplifyPath() {
+    waypoints = simplify(waypoints, 10, true);
+    drawAll();
+}
 
 // graphics functions
 
+function screenToField(x, y) {
+    return [x/scale, y/scale];
+}
+function fieldToScreen(x, y) {
+    return [x*scale, y*scale];
+}
+function drawCircle(x, y, r, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, -9, 9);
+    ctx.fill();
+}
+function createBuffer() {
+    var cvs = document.createElement("canvas");
+    cvs.width = canvas.width;
+    
+}
+
 function drawBackground() {
     ctx.fillStyle = "#ddd";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, fieldWidth, fieldHeight);
+}
+
+var drawnIndex = Infinity;
+var dotBuf = createBuffer(), lineBuf = createBuffer();
+function drawWaypoints() {
+    ctx.strokeStyle = "#009";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "bevel";
+    ctx.beginPath();
+    for (var i in waypoints) {
+        var {x, y} = waypoints[i];
+        if (i==0) ctx.moveTo(x, y);
+        else      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    for (var {x, y} of waypoints) {
+        drawCircle(x, y, 8, "#00f");
+    }
+}
+
+function drawAll() {
+    drawBackground();
+    drawWaypoints();
 }
 
 drawBackground();
@@ -64,14 +124,21 @@ function initInputListeners() {
 initInputListeners();
 
 function touchStart(x, y, id) {
-    ctx.fillStyle = "green";
-    ctx.fillRect(x, y, 10, 10);
+    [x, y] = screenToField(x, y);
+    addWaypoint(x, y);
 }
+var simpIndex = 0;
 function touchMove(x, y, id) {
-    ctx.fillStyle = "blue";
-    ctx.fillRect(x, y, 10, 10);
+    [x, y] = screenToField(x, y);
+    addWaypoint(x, y);
+    // if (waypoints.length-simpIndex > 20) {
+    //     console.log("Simplifying");
+    //     simpIndex = waypoints.length-5;
+    //     waypoints = simplify(waypoints.splice(0, simpIndex), 10, true).concat(waypoints);
+    //     drawAll();
+    // }
 }
 function touchEnd(x, y, id) {
-    ctx.fillStyle = "red";
-    ctx.fillRect(x, y, 10, 10);
+    [x, y] = screenToField(x, y);
+    simplifyPath();
 }
