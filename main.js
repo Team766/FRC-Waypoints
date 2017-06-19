@@ -20,12 +20,43 @@ var waypoints = [];
 
 function addWaypoint(x, y) {
     waypoints.push({x, y});
-    drawWaypoints();
+    drawAll();
 }
 
 function simplifyPath() {
     waypoints = simplify(waypoints, 10, true);
     drawAll();
+}
+
+function getSegments() {
+    var segments = [];
+    for (var i = 0; i < waypoints.length-1; i++) {
+        var {x:x1, y:y1} = waypoints[i];
+        var {x:x2, y:y2} = waypoints[i+1];
+        var dx = x2-x1, dy = y2-y1;
+        var length = Math.hypot(dx, dy);
+        var angle = Math.atan2(dy, dx) * 180/Math.PI;
+        segments.push({x1, y1, x2, y2, dx, dy, length, angle});
+    }
+    return segments;
+}
+
+function jointAngle(seg1, seg2) {
+    var a = seg2.angle - seg1.angle;
+    if (a > +180) a -= 360;
+    if (a < -180) a += 360;
+    return a;
+}
+
+function printCommands() {
+    var segments = getSegments();
+    for (var i = 0; i < segments.length; i++) {
+        if (i != 0) {
+            var angle = jointAngle(segments[i-1], segments[i]);
+            console.log("TurnAngle "+angle.toFixed(0)+"°");
+        }
+        console.log("DriveDist "+segments[i].length.toFixed(0)+" in.");
+    }
 }
 
 // graphics functions
