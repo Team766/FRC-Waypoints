@@ -36,16 +36,32 @@ function screenToField(x, y) {
 function fieldToScreen(x, y) {
     return [x*scale, y*scale];
 }
-function drawCircle(x, y, r, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(x, y, r, -9, 9);
-    ctx.fill();
+function drawCircle(x, y, r, color, ct) {
+    ct = ct || ctx;
+    ct.fillStyle = color;
+    ct.beginPath();
+    ct.arc(x, y, r, -9, 9);
+    ct.fill();
 }
 function createBuffer() {
     var cvs = document.createElement("canvas");
-    cvs.width = canvas.width;
-    
+    cvs.width  = canvas.width;
+    cvs.height = canvas.height;
+    var ctx = cvs.getContext("2d");
+    ctx.scale(pixelRatio*scale, pixelRatio*scale);
+    return {canvas:cvs, ctx};
+}
+function clearBuffer(buf) {
+    buf.ctx.save();
+    buf.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    buf.ctx.clearRect(0, 0, buf.canvas.width, buf.canvas.height);
+    buf.ctx.restore();
+}
+function drawBuffer(buf) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(buf.canvas, 0, 0);
+    ctx.restore();
 }
 
 function drawBackground() {
@@ -53,22 +69,34 @@ function drawBackground() {
     ctx.fillRect(0, 0, fieldWidth, fieldHeight);
 }
 
-var drawnIndex = Infinity;
+var drawIndex = 0;
 var dotBuf = createBuffer(), lineBuf = createBuffer();
+lineBuf.ctx.strokeStyle = "#009";
+lineBuf.ctx.lineWidth = 3;
+lineBuf.ctx.lineJoin = "bevel";
 function drawWaypoints() {
-    ctx.strokeStyle = "#009";
-    ctx.lineWidth = 3;
-    ctx.lineJoin = "bevel";
-    ctx.beginPath();
-    for (var i in waypoints) {
-        var {x, y} = waypoints[i];
-        if (i==0) ctx.moveTo(x, y);
-        else      ctx.lineTo(x, y);
+    if (waypoints.length < drawIndex) {
+        // redraw all waypoints
+        clearBuffer(lineBuf);
+        clearBuffer(dotBuf);
+        drawIndex = 0;
     }
-    ctx.stroke();
-    for (var {x, y} of waypoints) {
-        drawCircle(x, y, 8, "#00f");
+    
+    lineBuf.ctx.beginPath();
+    if (drawIndex != 0) {
+        var {x, y} = waypoints[drawIndex-1];
+        lineBuf.ctx.moveTo(x, y);
     }
+    for (; drawIndex < waypoints.length; drawIndex++) {
+        var {x, y} = waypoints[drawIndex];
+        lineBuf.ctx.lineTo(x, y);
+        drawCircle(x, y, 8, "#00f", dotBuf.ctx);
+    }
+    lineBuf.ctx.stroke();
+    
+    // draw the buffers to the main canvas
+    drawBuffer(lineBuf);
+    drawBuffer(dotBuf);
 }
 
 function drawAll() {
