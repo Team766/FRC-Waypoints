@@ -62,7 +62,7 @@ function printCommands() {
 
 // pure pursuit control
 
-const PURSUIT_DIST = 70;
+const PURSUIT_DIST = 40;
 const ROBOT_SPEED = 180;
 const MIN_TURN_RADIUS = 50;
 const SKIP_DIST = 40; // must be less than PURSUIT_DIST
@@ -88,7 +88,6 @@ function updatePP() {
     }
     if (curSeg == segments.length) {
         // at the end of the path!
-        stopPP();
         return {done: true};
     }
     
@@ -137,20 +136,14 @@ function normalizeAngle(a) {
     return a;
 }
 
-var ppRunning = false;
-var trailBuf;
-var lastFrame;
-function ppFrame() {
-    var curFrame = performance.now();
-    var dt = (curFrame - lastFrame) / 1000;
-    lastFrame = curFrame;
-    
-    // update the controller
-    var {radiusInv, badRadius, px0, py0, px, py, done} = updatePP();
-    if (done) return;
+function stepSimulation(stepSize) {
+    // get the controller update
+    var res = updatePP();
+    if (res.done) return res;
+    var {radiusInv, badRadius, px0, py0, px, py} = res;
     
     // move the robot
-    var driveDist = ROBOT_SPEED * dt;
+    var driveDist = stepSize;
     var turnAmount = driveDist * radiusInv;
     robotDir += turnAmount;
     trailBuf.ctx.beginPath();
@@ -160,13 +153,29 @@ function ppFrame() {
     trailBuf.ctx.lineTo(robotX, robotY);
     trailBuf.ctx.stroke();
     
+    return res;
+}
+
+var ppRunning = false;
+var trailBuf;
+var lastFrame;
+function ppFrame(time) {
+    var dt = (time - lastFrame) / 1000;
+    lastFrame = time;
+    
+    var {radiusInv, badRadius, px0, py0, px, py, done} = stepSimulation(ROBOT_SPEED * dt);
+    if (done) {
+        stopPP();
+        return;
+    }
+    
     // draw stuff
     drawAll();
     drawCircle(px, py, 4, "green");
     ctx.strokeStyle = badRadius? "red" : ctx.fillStyle;
     ctx.beginPath();
     ctx.moveTo(robotX, robotY);
-    if (radiusInv == 0) {
+    if (Math.abs(radiusInv) < 1/10000) {
         ctx.lineTo(px, py);
     } else {
         var cx = robotX - 1/radiusInv * Math.sin(robotDir);
@@ -182,17 +191,28 @@ function ppFrame() {
     if (ppRunning) requestAnimationFrame(ppFrame);
 }
 
-function startPP() {
+function initPP() {
     segments = getSegments();
     robotX = waypoints[0].x;
     robotY = waypoints[0].y;
     robotDir = segments[0].angle;
     curSeg = 0;
-    lastFrame = performance.now();
     trailBuf = createBuffer();
     trailBuf.ctx.strokeStyle = "gray";
+}
+function startPP() {
+    initPP();
+    lastFrame = performance.now();
     ppRunning = true;
-    ppFrame();
+    ppFrame(lastFrame);
+}
+function doPP() {
+    initPP();
+    var start = performance.now();
+    while (!stepSimulation(5.0).done) {
+        if (performance.now() - start > 1000) break;
+    }
+    drawAll();
 }
 function stopPP() {
     ppRunning = false;
