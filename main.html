@@ -3,8 +3,12 @@
         <title>Waypoints</title>
         <link rel="stylesheet" href="main.css">
     </head>
-    <body>
-        <p>fdasjklfhsdhsd</p>
+    <body onresize="initCanvas()">
+        <p><button onclick="clearWaypoints()">Clear Path</button></p>
+        <p>
+            <button class="needs-path" onclick="ppRunning? stopPP() : startPP()"><span id="start-stop">Start</span> Virtual Robot</button>
+            <button class="needs-path" onclick="doPP()">Trace Path</button>
+        </p>
         
         <div id="canvasWrapper">
             <canvas>Your browser doesn't support HTML5 canvas.</canvas>

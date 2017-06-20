@@ -7,12 +7,25 @@ const canvas = document.querySelector("canvas");
 const ctx = canvas.getContext("2d");
 
 const pixelRatio = window.devicePixelRatio || 1;
-const width  = canvas.clientWidth;
-const height = width * fieldHeight/fieldWidth;
-canvas.width  = width*pixelRatio;
-canvas.height = height*pixelRatio;
-const scale = width/fieldWidth;
-ctx.scale(pixelRatio*scale, pixelRatio*scale);
+var scale;
+function initCanvas() {
+    const width  = canvas.clientWidth;
+    const height = width * fieldHeight/fieldWidth;
+    canvas.width  = width*pixelRatio;
+    canvas.height = height*pixelRatio;
+    scale = width/fieldWidth;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(pixelRatio*scale, pixelRatio*scale);
+    
+    dotBuf  = createBuffer();
+    lineBuf = createBuffer();
+    lineBuf.ctx.strokeStyle = "#009";
+    lineBuf.ctx.lineWidth = 3;
+    lineBuf.ctx.lineJoin = "bevel";
+    
+    drawIndex = 0;
+    drawAll();
+}
 
 // state & related functions
 
@@ -21,10 +34,19 @@ var waypoints = [];
 function addWaypoint(x, y) {
     waypoints.push({x, y});
     drawAll();
+    updatePathNeeders();
+}
+
+function clearWaypoints() {
+    stopPP();
+    waypoints = [];
+    clearBuffer(trailBuf);
+    drawAll();
+    updatePathNeeders();
 }
 
 function simplifyPath() {
-    waypoints = simplify(waypoints, 10, true);
+    waypoints = simplify(waypoints, 5, true);
     drawAll();
 }
 
@@ -60,10 +82,17 @@ function printCommands() {
     }
 }
 
+function updatePathNeeders() {
+    for (var ele of document.getElementsByClassName("needs-path")) {
+        ele.disabled = waypoints.length < 2;
+    }
+}
+updatePathNeeders();
+
 // pure pursuit control
 
-const PURSUIT_DIST = 40;
-const ROBOT_SPEED = 180;
+const PURSUIT_DIST = 60;
+const ROBOT_SPEED = 250;
 const MIN_TURN_RADIUS = 50;
 const SKIP_DIST = 40; // must be less than PURSUIT_DIST
 var segments, curSeg;
@@ -160,7 +189,8 @@ var ppRunning = false;
 var trailBuf;
 var lastFrame;
 function ppFrame(time) {
-    var dt = (time - lastFrame) / 1000;
+    if (!ppRunning) return;
+    var dt = Math.min((time - lastFrame) / 1000, 1/25);
     lastFrame = time;
     
     var {radiusInv, badRadius, px0, py0, px, py, done} = stepSimulation(ROBOT_SPEED * dt);
@@ -185,10 +215,10 @@ function ppFrame(time) {
         ctx.arc(cx, cy, Math.abs(1/radiusInv), start, end, radiusInv < 0);
     }
     ctx.stroke();
-    drawCircle(robotX, robotY, 10, "#333");
+    drawCircle(robotX, robotY, 14, "#333");
     drawCircle(px0, py0, 4, "orange");
     
-    if (ppRunning) requestAnimationFrame(ppFrame);
+    requestAnimationFrame(ppFrame);
 }
 
 function initPP() {
@@ -201,20 +231,24 @@ function initPP() {
     trailBuf.ctx.strokeStyle = "gray";
 }
 function startPP() {
+    if (waypoints.length < 2) return;
+    document.getElementById("start-stop").textContent = "Stop";
     initPP();
     lastFrame = performance.now();
     ppRunning = true;
     ppFrame(lastFrame);
 }
 function doPP() {
+    stopPP();
     initPP();
     var start = performance.now();
     while (!stepSimulation(5.0).done) {
-        if (performance.now() - start > 1000) break;
+        if (performance.now() - start > 500) break; // prevent infinite loop
     }
     drawAll();
 }
 function stopPP() {
+    document.getElementById("start-stop").textContent = "Start";
     ppRunning = false;
     drawAll();
 }
@@ -261,10 +295,7 @@ function drawBackground() {
 }
 
 var drawIndex = 0;
-var dotBuf = createBuffer(), lineBuf = createBuffer();
-lineBuf.ctx.strokeStyle = "#009";
-lineBuf.ctx.lineWidth = 3;
-lineBuf.ctx.lineJoin = "bevel";
+var dotBuf, lineBuf;
 function drawWaypoints() {
     if (waypoints.length < drawIndex) {
         // redraw all waypoints
@@ -281,7 +312,7 @@ function drawWaypoints() {
     for (; drawIndex < waypoints.length; drawIndex++) {
         var {x, y} = waypoints[drawIndex];
         lineBuf.ctx.lineTo(x, y);
-        drawCircle(x, y, 8, "#00f", dotBuf.ctx);
+        drawCircle(x, y, 5, "#00f", dotBuf.ctx);
     }
     lineBuf.ctx.stroke();
     
@@ -296,7 +327,7 @@ function drawAll() {
     if (trailBuf) drawBuffer(trailBuf);
 }
 
-drawBackground();
+initCanvas();
 
 // input (mouse/touch)
 function initInputListeners() {
