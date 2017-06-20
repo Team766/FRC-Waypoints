@@ -35,16 +35,17 @@ function getSegments() {
         var {x:x2, y:y2} = waypoints[i+1];
         var dx = x2-x1, dy = y2-y1;
         var length = Math.hypot(dx, dy);
-        var angle = Math.atan2(dy, dx) * 180/Math.PI;
-        segments.push({x1, y1, x2, y2, dx, dy, length, angle});
+        var ndx = dx/length, ndy = dy/length;
+        var angle = Math.atan2(dy, dx);
+        segments.push({x1, y1, x2, y2, dx, dy, ndx, ndy, length, angle});
     }
     return segments;
 }
 
 function jointAngle(seg1, seg2) {
     var a = seg2.angle - seg1.angle;
-    if (a > +180) a -= 360;
-    if (a < -180) a += 360;
+    if (a > +Math.PI) a -= 2*Math.PI;
+    if (a < -Math.PI) a += 2*Math.PI;
     return a;
 }
 
@@ -52,11 +53,150 @@ function printCommands() {
     var segments = getSegments();
     for (var i = 0; i < segments.length; i++) {
         if (i != 0) {
-            var angle = jointAngle(segments[i-1], segments[i]);
+            var angle = jointAngle(segments[i-1], segments[i]) * 180/Math.PI;
             console.log("TurnAngle "+angle.toFixed(0)+"°");
         }
         console.log("DriveDist "+segments[i].length.toFixed(0)+" in.");
     }
+}
+
+// pure pursuit control
+
+const PURSUIT_DIST = 70;
+const ROBOT_SPEED = 180;
+const MIN_TURN_RADIUS = 50;
+const SKIP_DIST = 40; // must be less than PURSUIT_DIST
+var segments, curSeg;
+var robotX, robotY, robotDir;
+function updatePP() {
+    // find the closest point on the current segment (and advance if necessary)
+    var px0, py0;
+    var d;
+    for (; curSeg < segments.length; curSeg++) {
+        // calculate the distance from the robot to the segment
+        var seg = segments[curSeg];
+        var x = robotX - seg.x1;
+        var y = robotY - seg.y1;
+        d = x*seg.ndx + y*seg.ndy;
+        d /= seg.length;
+        if (d < 1.0) {
+            if (d < 0.0) d = 0.0;
+            px0 = seg.x1 + d*seg.dx;
+            py0 = seg.y1 + d*seg.dy;
+            break;
+        }
+    }
+    if (curSeg == segments.length) {
+        // at the end of the path!
+        stopPP();
+        return {done: true};
+    }
+    
+    // advance that point forward to get the pursuit point
+    d = -d*segments[curSeg].length;
+    var seg;
+    for (var i = curSeg; i < segments.length; i++) {
+        seg = segments[i];
+        if (d + seg.length > PURSUIT_DIST) {
+            d = PURSUIT_DIST - d;
+            break;
+        }
+        d += seg.length;
+    }
+    if (i == segments.length) { // after the last segment; cap to end
+        i--;
+        d = seg.length;
+    }
+    var px = seg.x1 + d*seg.ndx;
+    var py = seg.y1 + d*seg.ndy;
+    
+    // if the robot is close to the pursuit point (tight corner), skip ahead
+    var pdx = px-robotX, pdy = py-robotY;
+    d = Math.hypot(pdx, pdy);
+    if (d < SKIP_DIST && curSeg != i) {
+        curSeg = i; // advance to the segment containing the pursuit point
+        return updatePP(); // try again
+    }
+    
+    // calculate the (inverse) arc radius (sign tells left/right turn)
+    d /= 2;
+    var a = Math.PI/2 - (Math.atan2(pdy, pdx) - robotDir);
+    var radiusInv = Math.cos(a) / d; // reciprocal, to avoid divide-by-zero
+    var badRadius = false; // used for drawing effect
+    if (normalizeAngle(a) > Math.PI || Math.abs(radiusInv) > 1/MIN_TURN_RADIUS) {
+        radiusInv = Math.sign(radiusInv) * 1/MIN_TURN_RADIUS;
+        badRadius = true;
+    }
+    
+    return {radiusInv, badRadius, px0, py0, px, py, done: false};
+}
+
+function normalizeAngle(a) {
+    a %= 2*Math.PI;
+    if (a < 0) a += 2*Math.PI;
+    return a;
+}
+
+var ppRunning = false;
+var trailBuf;
+var lastFrame;
+function ppFrame() {
+    var curFrame = performance.now();
+    var dt = (curFrame - lastFrame) / 1000;
+    lastFrame = curFrame;
+    
+    // update the controller
+    var {radiusInv, badRadius, px0, py0, px, py, done} = updatePP();
+    if (done) return;
+    
+    // move the robot
+    var driveDist = ROBOT_SPEED * dt;
+    var turnAmount = driveDist * radiusInv;
+    robotDir += turnAmount;
+    trailBuf.ctx.beginPath();
+    trailBuf.ctx.moveTo(robotX, robotY);
+    robotX += driveDist * Math.cos(robotDir);
+    robotY += driveDist * Math.sin(robotDir);
+    trailBuf.ctx.lineTo(robotX, robotY);
+    trailBuf.ctx.stroke();
+    
+    // draw stuff
+    drawAll();
+    drawCircle(px, py, 4, "green");
+    ctx.strokeStyle = badRadius? "red" : ctx.fillStyle;
+    ctx.beginPath();
+    ctx.moveTo(robotX, robotY);
+    if (radiusInv == 0) {
+        ctx.lineTo(px, py);
+    } else {
+        var cx = robotX - 1/radiusInv * Math.sin(robotDir);
+        var cy = robotY + 1/radiusInv * Math.cos(robotDir);
+        var start = Math.atan2(robotY-cy, robotX-cx);
+        var end = Math.atan2(py-cy, px-cx);
+        ctx.arc(cx, cy, Math.abs(1/radiusInv), start, end, radiusInv < 0);
+    }
+    ctx.stroke();
+    drawCircle(robotX, robotY, 10, "#333");
+    drawCircle(px0, py0, 4, "orange");
+    
+    if (ppRunning) requestAnimationFrame(ppFrame);
+}
+
+function startPP() {
+    segments = getSegments();
+    robotX = waypoints[0].x;
+    robotY = waypoints[0].y;
+    robotDir = segments[0].angle;
+    curSeg = 0;
+    lastFrame = performance.now();
+    trailBuf = createBuffer();
+    trailBuf.ctx.strokeStyle = "gray";
+    ppRunning = true;
+    ppFrame();
+}
+function stopPP() {
+    ppRunning = false;
+    drawAll();
 }
 
 // graphics functions
@@ -133,6 +273,7 @@ function drawWaypoints() {
 function drawAll() {
     drawBackground();
     drawWaypoints();
+    if (trailBuf) drawBuffer(trailBuf);
 }
 
 drawBackground();
@@ -183,19 +324,12 @@ function initInputListeners() {
 initInputListeners();
 
 function touchStart(x, y, id) {
-    [x, y] = screenToField(x, y);
-    addWaypoint(x, y);
+    touchMove(x, y, id);
 }
 var simpIndex = 0;
 function touchMove(x, y, id) {
     [x, y] = screenToField(x, y);
     addWaypoint(x, y);
-    // if (waypoints.length-simpIndex > 20) {
-    //     console.log("Simplifying");
-    //     simpIndex = waypoints.length-5;
-    //     waypoints = simplify(waypoints.splice(0, simpIndex), 10, true).concat(waypoints);
-    //     drawAll();
-    // }
 }
 function touchEnd(x, y, id) {
     [x, y] = screenToField(x, y);
