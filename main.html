@@ -3,7 +3,7 @@
         <title>Waypoints</title>
         <link rel="stylesheet" href="main.css">
     </head>
-    <body onresize="initCanvas()">
+    <body onresize="onResize()">
         <p><button onclick="clearWaypoints()">Clear Path</button></p>
         <p>
             <button class="needs-path" onclick="ppRunning? stopPP() : startPP()"><span id="start-stop">Start</span> Virtual Robot</button>

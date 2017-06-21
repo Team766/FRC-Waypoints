@@ -8,7 +8,8 @@ const ctx = canvas.getContext("2d");
 
 const pixelRatio = window.devicePixelRatio || 1;
 var scale;
-function initCanvas() {
+function onResize() {
+    console.log("onResize()");
     const width  = canvas.clientWidth;
     const height = width * fieldHeight/fieldWidth;
     canvas.width  = width*pixelRatio;
@@ -19,20 +20,41 @@ function initCanvas() {
     
     dotBuf  = createBuffer();
     lineBuf = createBuffer();
-    lineBuf.ctx.strokeStyle = "#009";
+    lineBuf.ctx.strokeStyle = LINE_COLOR;
     lineBuf.ctx.lineWidth = 3;
-    lineBuf.ctx.lineJoin = "bevel";
+    editBuf = createBuffer();
+    editBuf.ctx.strokeStyle = LINE_COLOR;
+    editBuf.ctx.lineWidth = 3;
     
     drawIndex = 0;
     drawAll();
 }
+window.addEventListener("load", function() {
+    // somehow the scale is slightly off after the first onResize()
+    onResize();
+    onResize();
+});
 
 // state & related functions
 
 var waypoints = [];
+var editPoints = [];
+
+function addEditPoint(x, y) {
+    editPoints.push({x, y});
+    if (editPoints.length > 1) {
+        editBuf.ctx.beginPath();
+        var {x:x0, y:y0} = editPoints[editPoints.length-2];
+        editBuf.ctx.moveTo(x0, y0);
+        editBuf.ctx.lineTo(x, y);
+        editBuf.ctx.stroke();
+    }
+    drawAll();
+}
 
 function addWaypoint(x, y) {
     waypoints.push({x, y});
+    updateSegments();
     drawAll();
     updatePathNeeders();
 }
@@ -40,6 +62,7 @@ function addWaypoint(x, y) {
 function clearWaypoints() {
     stopPP();
     waypoints = [];
+    updateSegments();
     clearBuffer(trailBuf);
     drawAll();
     updatePathNeeders();
@@ -47,11 +70,14 @@ function clearWaypoints() {
 
 function simplifyPath() {
     waypoints = simplify(waypoints, 5, true);
+    updateSegments();
+    drawIndex = Infinity;
     drawAll();
 }
 
-function getSegments() {
-    var segments = [];
+var segments = [];
+function updateSegments() {
+    segments = [];
     for (var i = 0; i < waypoints.length-1; i++) {
         var {x:x1, y:y1} = waypoints[i];
         var {x:x2, y:y2} = waypoints[i+1];
@@ -61,7 +87,6 @@ function getSegments() {
         var angle = Math.atan2(dy, dx);
         segments.push({x1, y1, x2, y2, dx, dy, ndx, ndy, length, angle});
     }
-    return segments;
 }
 
 function jointAngle(seg1, seg2) {
@@ -72,7 +97,6 @@ function jointAngle(seg1, seg2) {
 }
 
 function printCommands() {
-    var segments = getSegments();
     for (var i = 0; i < segments.length; i++) {
         if (i != 0) {
             var angle = jointAngle(segments[i-1], segments[i]) * 180/Math.PI;
@@ -222,7 +246,6 @@ function ppFrame(time) {
 }
 
 function initPP() {
-    segments = getSegments();
     robotX = waypoints[0].x;
     robotY = waypoints[0].y;
     robotDir = segments[0].angle;
@@ -274,6 +297,8 @@ function createBuffer() {
     cvs.height = canvas.height;
     var ctx = cvs.getContext("2d");
     ctx.scale(pixelRatio*scale, pixelRatio*scale);
+    ctx.lineJoin = "round";
+    ctx.lineCap  = "round";
     return {canvas:cvs, ctx};
 }
 function clearBuffer(buf) {
@@ -289,13 +314,16 @@ function drawBuffer(buf) {
     ctx.restore();
 }
 
+const LINE_COLOR = "#009";
+const DOT_COLOR = "#00f";
+
 function drawBackground() {
     ctx.fillStyle = "#ddd";
     ctx.fillRect(0, 0, fieldWidth, fieldHeight);
 }
 
 var drawIndex = 0;
-var dotBuf, lineBuf;
+var dotBuf, lineBuf, editBuf;
 function drawWaypoints() {
     if (waypoints.length < drawIndex) {
         // redraw all waypoints
@@ -312,7 +340,7 @@ function drawWaypoints() {
     for (; drawIndex < waypoints.length; drawIndex++) {
         var {x, y} = waypoints[drawIndex];
         lineBuf.ctx.lineTo(x, y);
-        drawCircle(x, y, 5, "#00f", dotBuf.ctx);
+        drawCircle(x, y, 5, DOT_COLOR, dotBuf.ctx);
     }
     lineBuf.ctx.stroke();
     
@@ -324,10 +352,9 @@ function drawWaypoints() {
 function drawAll() {
     drawBackground();
     drawWaypoints();
+    drawBuffer(editBuf);
     if (trailBuf) drawBuffer(trailBuf);
 }
-
-initCanvas();
 
 // input (mouse/touch)
 function initInputListeners() {
@@ -375,14 +402,28 @@ function initInputListeners() {
 initInputListeners();
 
 function touchStart(x, y, id) {
-    touchMove(x, y, id);
+    console.log("touchStart");
+    if (waypoints.length < 2 || true) {
+        // start drawing a new path
+        console.log("   new path");
+        waypoints = [];
+        if (trailBuf) clearBuffer(trailBuf);
+        touchMove(x, y, id);
+    } else {
+        console.log("   edit");
+        
+    }
 }
 var simpIndex = 0;
 function touchMove(x, y, id) {
     [x, y] = screenToField(x, y);
-    addWaypoint(x, y);
+    addEditPoint(x, y);
 }
 function touchEnd(x, y, id) {
     [x, y] = screenToField(x, y);
+    waypoints = editPoints;
+    editPoints = [];
+    clearBuffer(editBuf);
+    updatePathNeeders();
     simplifyPath();
 }
