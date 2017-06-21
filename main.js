@@ -332,9 +332,10 @@ function drawBuffer(buf) {
 
 const LINE_COLOR = "#009";
 const DOT_COLOR = "#00f";
+const BACKGROUND_COLOR = "#ddd";
 
 function drawBackground() {
-    ctx.fillStyle = "#ddd";
+    ctx.fillStyle = BACKGROUND_COLOR;
     ctx.fillRect(0, 0, fieldWidth, fieldHeight);
 }
 
@@ -430,7 +431,7 @@ initInputListeners();
 var editPt1, editPt2;
 var touching = false;
 function touchStart(x, y, id) {
-    if (waypoints.length < 2) {
+    if (waypoints.length < 2 || !document.getElementById("edit-path").checked) {
         // start drawing a new path
         touching = true;
         clearWaypoints();
@@ -470,6 +471,8 @@ function touchEnd(x, y, id) {
     }
     editPoints = [];
     clearBuffer(editBuf);
+    stopPP();
+    clearBuffer(trailBuf);
     updatePathNeeders();
     simplifyPath();
     touching = false;

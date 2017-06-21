@@ -4,7 +4,10 @@
         <link rel="stylesheet" href="main.css">
     </head>
     <body onresize="onResize()">
-        <p><button onclick="clearWaypoints()">Clear Path</button></p>
+        <p>
+            <button onclick="clearWaypoints()">Clear Path</button>
+            <label><input id="edit-path" type="checkbox">Edit path</label>
+        </p>
         <p>
             <button class="needs-path" onclick="ppRunning? stopPP() : startPP()"><span id="start-stop">Start</span> Virtual Robot</button>
             <button class="needs-path" onclick="doPP()">Trace Path</button>
