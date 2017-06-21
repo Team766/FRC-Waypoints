@@ -25,6 +25,8 @@ function onResize() {
     editBuf = createBuffer();
     editBuf.ctx.strokeStyle = LINE_COLOR;
     editBuf.ctx.lineWidth = 3;
+    trailBuf = createBuffer();
+    trailBuf.ctx.strokeStyle = "gray";
     
     drawIndex = 0;
     drawAll();
@@ -68,8 +70,9 @@ function clearWaypoints() {
     updatePathNeeders();
 }
 
+const SIMPLIFY_TOLERANCE = 10;
 function simplifyPath() {
-    waypoints = simplify(waypoints, 5, true);
+    waypoints = simplify(waypoints, SIMPLIFY_TOLERANCE, true);
     updateSegments();
     drawIndex = Infinity;
     drawAll();
@@ -94,6 +97,31 @@ function jointAngle(seg1, seg2) {
     if (a > +Math.PI) a -= 2*Math.PI;
     if (a < -Math.PI) a += 2*Math.PI;
     return a;
+}
+
+function getPointOnSegment(seg, x, y) {
+    x = x - seg.x1;
+    y = y - seg.y1;
+    var d = x*seg.ndx + y*seg.ndy; // dot product
+    d /= seg.length;
+    if (d > 1.0) d = 1.0;
+    if (d < 0.0) d = 0.0;
+    x = seg.x1 + d*seg.dx;
+    y = seg.y1 + d*seg.dy;
+    return {d, x, y};
+}
+
+function getPointOnPath(px, py) {
+    var minPt, minDist = Infinity;
+    for (var i = 0; i < segments.length; i++) {
+        var {x, y, d} = getPointOnSegment(segments[i], px, py);
+        var dist = Math.hypot(px-x, py-y);
+        if (dist < minDist) {
+            minDist = dist;
+            minPt = {x, y, segI:i, d, dist};
+        }
+    }
+    return minPt;
 }
 
 function printCommands() {
@@ -123,21 +151,10 @@ var segments, curSeg;
 var robotX, robotY, robotDir;
 function updatePP() {
     // find the closest point on the current segment (and advance if necessary)
-    var px0, py0;
-    var d;
     for (; curSeg < segments.length; curSeg++) {
         // calculate the distance from the robot to the segment
-        var seg = segments[curSeg];
-        var x = robotX - seg.x1;
-        var y = robotY - seg.y1;
-        d = x*seg.ndx + y*seg.ndy;
-        d /= seg.length;
-        if (d < 1.0) {
-            if (d < 0.0) d = 0.0;
-            px0 = seg.x1 + d*seg.dx;
-            py0 = seg.y1 + d*seg.dy;
-            break;
-        }
+        var {d, x:px0, y:py0} = getPointOnSegment(segments[curSeg], robotX, robotY);
+        if (d < 1.0) break;
     }
     if (curSeg == segments.length) {
         // at the end of the path!
@@ -246,12 +263,11 @@ function ppFrame(time) {
 }
 
 function initPP() {
+    clearBuffer(trailBuf);
     robotX = waypoints[0].x;
     robotY = waypoints[0].y;
     robotDir = segments[0].angle;
     curSeg = 0;
-    trailBuf = createBuffer();
-    trailBuf.ctx.strokeStyle = "gray";
 }
 function startPP() {
     if (waypoints.length < 2) return;
@@ -353,14 +369,24 @@ function drawAll() {
     drawBackground();
     drawWaypoints();
     drawBuffer(editBuf);
-    if (trailBuf) drawBuffer(trailBuf);
+    drawBuffer(trailBuf);
+    if (editPt2) {
+        ctx.strokeStyle = LINE_COLOR;
+        ctx.beginPath();
+        var {x, y} = editPoints[editPoints.length-1];
+        ctx.moveTo(x, y);
+        ({x, y} = editPt2);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+    }
 }
 
 // input (mouse/touch)
 function initInputListeners() {
-    function onStart(x, y, id) { touchStart(x-canvas.offsetLeft, y-canvas.offsetTop, id) }
-    function onMove (x, y, id) { touchMove (x-canvas.offsetLeft, y-canvas.offsetTop, id) }
-    function onEnd  (x, y, id) { touchEnd  (x-canvas.offsetLeft, y-canvas.offsetTop, id) }
+    function coords(x, y) { return screenToField(x-canvas.offsetLeft, y-canvas.offsetTop) }
+    function onStart(x, y, id) { touchStart(...coords(x, y), id) }
+    function onMove (x, y, id) { touchMove (...coords(x, y), id) }
+    function onEnd  (x, y, id) { touchEnd  (...coords(x, y), id) }
     canvas.addEventListener("mousedown", function(event) {
         event = event||window.event;
         if (event.buttons != 1) return;
@@ -401,29 +427,50 @@ function initInputListeners() {
 }
 initInputListeners();
 
+var editPt1, editPt2;
+var touching = false;
 function touchStart(x, y, id) {
-    console.log("touchStart");
-    if (waypoints.length < 2 || true) {
+    if (waypoints.length < 2) {
         // start drawing a new path
-        console.log("   new path");
-        waypoints = [];
-        if (trailBuf) clearBuffer(trailBuf);
+        touching = true;
+        clearWaypoints();
         touchMove(x, y, id);
     } else {
-        console.log("   edit");
-        
+        // start editing the existing path
+        editPt1 = getPointOnPath(x, y);
+        if (editPt1.dist < 20) {
+            touching = true;
+            addEditPoint(editPt1.x, editPt1.y);
+            touchMove(x, y, id);
+        } else editPt1 = null;
     }
 }
 var simpIndex = 0;
 function touchMove(x, y, id) {
-    [x, y] = screenToField(x, y);
+    if (!touching) return;
+    if (editPt1) {
+        editPt2 = getPointOnPath(x, y);
+    }
     addEditPoint(x, y);
 }
 function touchEnd(x, y, id) {
-    [x, y] = screenToField(x, y);
-    waypoints = editPoints;
+    if (!touching) return;
+    if (editPt1) {
+        addEditPoint(editPt2.x, editPt2.y);
+        var {segI:i1, d:d1} = editPt1;
+        var {segI:i2, d:d2} = editPt2;
+        if (i1 > i2 || (i1==i2 && d1 > d2)) {
+            [i1, i2] = [i2, i1];
+            editPoints = editPoints.reverse();
+        }
+        waypoints.splice(i1+1, i2-i1, ...editPoints);
+        editPt1 = editPt2 = null;
+    } else {
+        waypoints = editPoints;
+    }
     editPoints = [];
     clearBuffer(editBuf);
     updatePathNeeders();
     simplifyPath();
+    touching = false;
 }
