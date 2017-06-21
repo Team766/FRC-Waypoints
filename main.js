@@ -331,7 +331,9 @@ function drawBuffer(buf) {
 }
 
 const LINE_COLOR = "#009";
+const LINE_COLOR_FADE = "#9393DD";
 const DOT_COLOR = "#00f";
+const DOT_COLOR_FADE = "#9393E8";
 const BACKGROUND_COLOR = "#ddd";
 
 function drawBackground() {
@@ -342,13 +344,14 @@ function drawBackground() {
 var drawIndex = 0;
 var dotBuf, lineBuf, editBuf;
 function drawWaypoints() {
-    if (waypoints.length < drawIndex) {
+    if (waypoints.length < drawIndex || editPt2) {
         // redraw all waypoints
         clearBuffer(lineBuf);
         clearBuffer(dotBuf);
         drawIndex = 0;
     }
     
+    var [i1, i2, , p1, p2] = editPt2? getEditIndices() : [-2, -2];
     lineBuf.ctx.beginPath();
     if (drawIndex != 0) {
         var {x, y} = waypoints[drawIndex-1];
@@ -356,8 +359,22 @@ function drawWaypoints() {
     }
     for (; drawIndex < waypoints.length; drawIndex++) {
         var {x, y} = waypoints[drawIndex];
+        if (drawIndex == i1+1) {
+            lineBuf.ctx.lineTo(p1.x, p1.y);
+            lineBuf.ctx.stroke();
+            lineBuf.ctx.strokeStyle = LINE_COLOR_FADE;
+            lineBuf.ctx.beginPath();
+            lineBuf.ctx.moveTo(p1.x, p1.y);
+        }
+        if (drawIndex == i2+1) {
+            lineBuf.ctx.lineTo(p2.x, p2.y);
+            lineBuf.ctx.stroke();
+            lineBuf.ctx.strokeStyle = LINE_COLOR;
+            lineBuf.ctx.beginPath();
+            lineBuf.ctx.moveTo(p2.x, p2.y);
+        }
         lineBuf.ctx.lineTo(x, y);
-        drawCircle(x, y, 5, DOT_COLOR, dotBuf.ctx);
+        drawCircle(x, y, 5, drawIndex>i1 && drawIndex<=i2? DOT_COLOR_FADE : DOT_COLOR, dotBuf.ctx);
     }
     lineBuf.ctx.stroke();
     
@@ -446,7 +463,7 @@ function touchStart(x, y, id) {
         } else editPt1 = null;
     }
 }
-var simpIndex = 0;
+
 function touchMove(x, y, id) {
     if (!touching) return;
     if (editPt1) {
@@ -454,16 +471,21 @@ function touchMove(x, y, id) {
     }
     addEditPoint(x, y);
 }
+
+function getEditIndices() {
+        var {segI:i1, d:d1} = editPt1;
+        var {segI:i2, d:d2} = editPt2;
+        if (i1 > i2 || (i1==i2 && d1 > d2)) {
+            return [i2, i1, true, editPt2, editPt1];
+        }
+        return [i1, i2, false, editPt1, editPt2];
+}
 function touchEnd(x, y, id) {
     if (!touching) return;
     if (editPt1) {
         addEditPoint(editPt2.x, editPt2.y);
-        var {segI:i1, d:d1} = editPt1;
-        var {segI:i2, d:d2} = editPt2;
-        if (i1 > i2 || (i1==i2 && d1 > d2)) {
-            [i1, i2] = [i2, i1];
-            editPoints = editPoints.reverse();
-        }
+        var [i1, i2, rev] = getEditIndices();
+        if (rev) editPoints.reverse();
         waypoints.splice(i1+1, i2-i1, ...editPoints);
         editPt1 = editPt2 = null;
     } else {
